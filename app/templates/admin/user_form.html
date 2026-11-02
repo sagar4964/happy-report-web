@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_field %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-6">
+  <h1 class="h3 mb-3">{{ title }}</h1>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    {% for field in form if field.widget.input_type != "hidden" %}
+      {% if field.type == "BooleanField" %}
+        <div class="form-check mb-3">{{ field(class="form-check-input") }} {{ field.label(class="form-check-label") }}</div>
+      {% else %}
+        {{ render_field(field) }}
+      {% endif %}
+    {% endfor %}
+    <button class="btn btn-primary">Save</button>
+    <a class="btn btn-link" href="{{ url_for('admin.users') }}">Cancel</a>
+  </form>
+</div></div>
+{% endblock %}
