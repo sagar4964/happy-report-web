@@ -5,3 +5,11 @@
   {% for e in field.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
 </div>
 {% endmacro %}
+
+{% macro render_check(field) %}
+<div class="form-check mb-3">
+  {{ field(class="form-check-input" ~ (" is-invalid" if field.errors else "")) }}
+  {{ field.label(class="form-check-label") }}
+  {% for e in field.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+</div>
+{% endmacro %}

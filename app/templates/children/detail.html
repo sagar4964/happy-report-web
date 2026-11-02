@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ child.full_name }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">{{ child.full_name }}
+      {% if not child.is_active %}<span class="badge bg-secondary">Archived</span>{% endif %}</h1>
+    <div class="text-muted">Child ID {{ child.id }} · {{ child.current_education }}</div>
+    {% if child.living_situation_note %}
+    <div class="text-muted small">Living situation: {{ child.living_situation_note }}</div>
+    {% endif %}
+  </div>
+  <div class="mt-2 mt-md-0">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('children.edit', child_id=child.id) }}">Edit profile</a>
+    {% if child.is_active %}
+    <a class="btn btn-primary btn-sm" href="{{ url_for('observations.new', child_id=child.id) }}">Add observation</a>
+    {% endif %}
+    {% if current_user.is_admin %}
+    <form method="post" action="{{ url_for('children.archive', child_id=child.id) }}" class="d-inline"
+          onsubmit="return confirm('Are you sure?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-outline-danger btn-sm">{{ "Archive" if child.is_active else "Restore" }}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<form method="get" class="row g-2 mb-3">
+  <div class="col-12 col-md-4">
+    <select name="period" class="form-select">
+      <option value="all" {% if not selected %}selected{% endif %}>All dates</option>
+      {% for p in periods %}
+      <option value="{{ p.id }}" {% if selected and selected.id == p.id %}selected{% endif %}>Reporting year {{ p.year }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-12 col-md-4">
+    <select name="category" class="form-select">
+      <option value="">All categories</option>
+      {% for c in categories %}
+      <option value="{{ c.id }}" {% if category_id == c.id %}selected{% endif %}>{{ c.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto"><button class="btn btn-outline-secondary">Filter</button></div>
+</form>
+
+<p class="text-muted small">{{ observations|length }} observation(s), oldest first.</p>
+
+{% for o in observations %}
+<div class="card mb-2"><div class="card-body py-2">
+  <div class="d-flex flex-wrap justify-content-between small text-muted">
+    <span>{{ o.event_date.strftime("%d %b %Y") }} · {{ o.category.name }}</span>
+    <span>Entered by {{ o.created_by.name }}{% if o.updated_by %} · last edited by {{ o.updated_by.name }}{% endif %}</span>
+  </div>
+  <div style="white-space: pre-wrap;">{{ o.text }}</div>
+  {% if o.source_note %}<div class="small text-muted">Source: {{ o.source_note }}</div>{% endif %}
+  {% if o.correction_note %}<div class="small text-muted">Change note: {{ o.correction_note }}</div>{% endif %}
+  <div class="mt-1">
+    <a class="small" href="{{ url_for('observations.edit', obs_id=o.id) }}">Edit</a>
+    {% if current_user.is_admin or o.created_by_id == current_user.id %}
+    <form method="post" action="{{ url_for('observations.delete', obs_id=o.id) }}" class="d-inline"
+          onsubmit="return confirm('Remove this observation?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-link btn-sm text-danger p-0 ms-2">Remove</button>
+    </form>
+    {% endif %}
+  </div>
+</div></div>
+{% else %}
+<div class="alert alert-info">No observations for this selection.</div>
+{% endfor %}
+{% endblock %}

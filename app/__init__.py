@@ -23,9 +23,13 @@ def create_app(config_name=None):
     from .auth.routes import bp as auth_bp
     from .admin.routes import bp as admin_bp
     from .main.routes import bp as main_bp
+    from .children.routes import bp as children_bp
+    from .observations.routes import bp as observations_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(main_bp)
+    app.register_blueprint(children_bp)
+    app.register_blueprint(observations_bp)
 
     from .cli import register_cli
     register_cli(app)

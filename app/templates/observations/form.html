@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_field, render_check %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-8">
+  <h1 class="h3 mb-3">{{ title }}</h1>
+  <div class="alert alert-secondary">
+    For: <strong>{{ child.full_name }}</strong> · Child ID {{ child.id }} · {{ child.current_education }}
+  </div>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    {{ render_field(form.event_date) }}
+    {{ render_field(form.category_id) }}
+    {{ render_field(form.text) }}
+    {{ render_field(form.source_note) }}
+    {% if editing %}{{ render_field(form.correction_note) }}{% endif %}
+    {% if show_confirm or form.confirm_duplicate.errors %}{{ render_check(form.confirm_duplicate) }}{% endif %}
+    <button class="btn btn-primary">Save</button>
+    {% if not editing %}
+    <button class="btn btn-outline-primary" name="save_add" value="1">Save and add another</button>
+    {% endif %}
+    <a class="btn btn-link" href="{{ url_for('children.detail', child_id=child.id) }}">Cancel</a>
+  </form>
+</div></div>
+{% endblock %}

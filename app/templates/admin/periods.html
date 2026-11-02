@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Reporting periods{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Reporting periods</h1>
+  <a class="btn btn-primary" href="{{ url_for('admin.period_new') }}">Add period</a>
+</div>
+{% if not periods %}
+<div class="alert alert-info">No periods yet. Add one, or run <code>flask --app run seed-defaults</code>.</div>
+{% endif %}
+<div class="table-responsive">
+<table class="table table-sm bg-white">
+  <thead><tr><th>Year</th><th>From</th><th>To</th><th></th></tr></thead>
+  <tbody>
+  {% for p in periods %}
+    <tr>
+      <td>{{ p.year }}</td>
+      <td>{{ p.start_date.strftime("%d %b %Y") }}</td>
+      <td>{{ p.end_date.strftime("%d %b %Y") }}</td>
+      <td><a href="{{ url_for('admin.period_edit', period_id=p.id) }}">Edit</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

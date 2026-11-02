@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Categories{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Observation categories</h1>
+  <a class="btn btn-primary" href="{{ url_for('admin.category_new') }}">Add category</a>
+</div>
+{% if not categories %}
+<div class="alert alert-info">No categories yet. Add some, or run <code>flask --app run seed-defaults</code>.</div>
+{% endif %}
+<div class="table-responsive">
+<table class="table table-sm bg-white">
+  <thead><tr><th>Order</th><th>Name</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for c in categories %}
+    <tr>
+      <td>{{ c.sort_order }}</td><td>{{ c.name }}</td>
+      <td>{{ "Active" if c.is_active else "Inactive" }}</td>
+      <td><a href="{{ url_for('admin.category_edit', category_id=c.id) }}">Edit</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
