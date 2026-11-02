@@ -2,7 +2,7 @@
 from datetime import date
 from sqlalchemy import func, or_
 from .extensions import db
-from .models import Category, Child, Observation, ReportingPeriod
+from .models import Category, Child, HistoricalReport, Observation, ReportingPeriod
 
 
 def normalize_text(text):
@@ -68,3 +68,27 @@ def is_duplicate_observation(child_id, text, exclude_id=None):
         if normalize_text(existing) == target:
             return True
     return False
+
+
+def latest_previous_report(child_id, year):
+    """The most recent report of THIS child from a year before `year`.
+
+    Within the same year a Word file is preferred over a PDF (Word has readable text).
+    Returns None when the child has no earlier report.
+    """
+    stmt = (
+        db.select(HistoricalReport)
+        .where(
+            HistoricalReport.child_id == child_id,
+            HistoricalReport.is_removed.is_(False),
+            HistoricalReport.reporting_year < year,
+        )
+        .order_by(
+            HistoricalReport.reporting_year.desc(),
+            (HistoricalReport.file_type == "docx").desc(),
+            HistoricalReport.uploaded_at.desc(),
+            HistoricalReport.id.desc(),
+        )
+        .limit(1)
+    )
+    return db.session.execute(stmt).scalar_one_or_none()

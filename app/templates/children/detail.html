@@ -12,6 +12,7 @@
   </div>
   <div class="mt-2 mt-md-0">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('children.edit', child_id=child.id) }}">Edit profile</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('history.index', child_id=child.id) }}">Previous reports</a>
     {% if child.is_active %}
     <a class="btn btn-primary btn-sm" href="{{ url_for('observations.new', child_id=child.id) }}">Add observation</a>
     {% endif %}

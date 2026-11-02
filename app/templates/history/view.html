@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Report {{ report.reporting_year }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">Report for {{ report.reporting_year }}</h1>
+    <div class="text-muted">
+      <a href="{{ url_for('children.detail', child_id=child.id) }}">{{ child.full_name }}</a>
+      · Child ID {{ child.id }} · {{ report.original_filename }}
+    </div>
+    <div class="text-muted small">Uploaded {{ report.uploaded_at.strftime("%d %b %Y") }} by {{ report.uploaded_by.name }}
+      · {{ word_count }} words of readable text</div>
+  </div>
+  <div class="mt-2 mt-md-0">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('history.index', child_id=child.id) }}">Back</a>
+    <a class="btn btn-primary btn-sm" href="{{ url_for('history.download', report_id=report.id) }}">Download original</a>
+  </div>
+</div>
+{% if not text.strip() %}
+<div class="alert alert-warning">No readable text was found in this file.</div>
+{% else %}
+<div class="card"><div class="card-body" style="white-space: pre-wrap;">{{ text }}</div></div>
+<p class="text-muted small mt-2">This is a plain-text view of the Word file for checking. The original is unchanged.</p>
+{% endif %}
+{% endblock %}

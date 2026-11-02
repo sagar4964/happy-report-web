@@ -114,6 +114,31 @@ class Observation(db.Model):
     __table_args__ = (db.Index("ix_observations_child_date", "child_id", "event_date"),)
 
 
+class HistoricalReport(db.Model):
+    """A previously written annual report (uploaded file) that belongs to ONE child."""
+    __tablename__ = "historical_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    child_id = db.Column(db.Integer, db.ForeignKey("children.id"), nullable=False, index=True)
+    reporting_year = db.Column(db.Integer, nullable=False)
+    original_filename = db.Column(db.String(255), nullable=False)
+    stored_name = db.Column(db.String(64), unique=True, nullable=False)  # server-made name
+    file_type = db.Column(db.String(10), nullable=False)  # "docx" or "pdf"
+    file_size = db.Column(db.Integer, nullable=False)
+    extracted_text = db.Column(db.Text)  # filled for .docx only
+    uploaded_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    uploaded_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    # Soft remove: the file stays on disk, it is just hidden.
+    is_removed = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    removed_at = db.Column(db.DateTime(timezone=True))
+    removed_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
+
+    child = db.relationship("Child")
+    uploaded_by = db.relationship("User", foreign_keys=[uploaded_by_id])
+
+    __table_args__ = (db.Index("ix_historical_child_year", "child_id", "reporting_year"),)
+
+
 @login_manager.user_loader
 def load_user(user_id):
     user = db.session.get(User, int(user_id))

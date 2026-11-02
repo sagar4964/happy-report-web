@@ -12,6 +12,9 @@ def create_app(config_name=None):
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("SECRET_KEY is not set. Add it to your .env file.")
     os.makedirs(app.instance_path, exist_ok=True)
+    # Uploaded files live OUTSIDE any public folder, inside the instance folder.
+    app.config.setdefault("UPLOAD_FOLDER", os.path.join(app.instance_path, "uploads"))
+    app.config.setdefault("MAX_CONTENT_LENGTH", 10 * 1024 * 1024)  # 10 MB
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -25,11 +28,13 @@ def create_app(config_name=None):
     from .main.routes import bp as main_bp
     from .children.routes import bp as children_bp
     from .observations.routes import bp as observations_bp
+    from .history.routes import bp as history_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(children_bp)
     app.register_blueprint(observations_bp)
+    app.register_blueprint(history_bp)
 
     from .cli import register_cli
     register_cli(app)
@@ -44,6 +49,7 @@ def create_app(config_name=None):
     messages = {
         403: "You do not have permission to do that.",
         404: "That page was not found.",
+        413: "That file is too large. The limit is 10 MB.",
         500: "Something went wrong. Your saved data is safe. Please try again.",
     }
 

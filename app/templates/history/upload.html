@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import render_field %}
+{% block title %}Upload a report{% endblock %}
+{% block content %}
+<div class="row justify-content-center"><div class="col-md-7">
+  <h1 class="h3 mb-3">Upload a previous report</h1>
+  <div class="alert alert-secondary">
+    For: <strong>{{ child.full_name }}</strong> · Child ID {{ child.id }} · {{ child.current_education }}
+    <div class="small">Check that this is the right child before uploading.</div>
+  </div>
+  <form method="post" enctype="multipart/form-data" novalidate>
+    {{ form.hidden_tag() }}
+    {{ render_field(form.reporting_year) }}
+    <div class="mb-3">
+      {{ form.file.label(class="form-label") }}
+      {{ form.file(class="form-control" ~ (" is-invalid" if form.file.errors else ""), accept=".docx,.pdf") }}
+      {% for e in form.file.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      <div class="form-text">Maximum 10 MB. The original file is kept unchanged.</div>
+    </div>
+    <button class="btn btn-primary">Upload</button>
+    <a class="btn btn-link" href="{{ url_for('history.index', child_id=child.id) }}">Cancel</a>
+  </form>
+</div></div>
+{% endblock %}

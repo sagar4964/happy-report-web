@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Previous reports{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">Previous reports</h1>
+    <div class="text-muted">
+      <a href="{{ url_for('children.detail', child_id=child.id) }}">{{ child.full_name }}</a>
+      · Child ID {{ child.id }} · {{ child.current_education }}
+    </div>
+  </div>
+  <a class="btn btn-primary mt-2 mt-md-0" href="{{ url_for('history.upload', child_id=child.id) }}">Upload a report</a>
+</div>
+{% if not reports %}
+<div class="alert alert-warning">No previous report has been uploaded for this child yet.
+  Without one, comparisons with earlier years cannot be made.</div>
+{% else %}
+<div class="table-responsive">
+<table class="table table-sm bg-white align-middle">
+  <thead><tr><th>Year</th><th>File</th><th>Type</th><th>Uploaded</th><th></th></tr></thead>
+  <tbody>
+  {% for r in reports %}
+    <tr>
+      <td>{{ r.reporting_year }}</td>
+      <td>{{ r.original_filename }}</td>
+      <td>{{ r.file_type|upper }}</td>
+      <td>{{ r.uploaded_at.strftime("%d %b %Y") }} · {{ r.uploaded_by.name }}</td>
+      <td class="text-nowrap">
+        {% if r.file_type == "docx" %}<a href="{{ url_for('history.view', report_id=r.id) }}">View</a> ·{% endif %}
+        <a href="{{ url_for('history.download', report_id=r.id) }}">Download</a>
+        {% if current_user.is_admin %}
+        <form method="post" action="{{ url_for('history.remove', report_id=r.id) }}" class="d-inline"
+              onsubmit="return confirm('Hide this report? The file itself is kept.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-link btn-sm text-danger p-0 ms-2">Hide</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}
