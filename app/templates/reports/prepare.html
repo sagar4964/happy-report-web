@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Write annual report{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Write annual report</h1>
+
+{% for e in errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+
+<form method="get" class="row g-2 align-items-end mb-3">
+  <div class="col-12 col-md-4">
+    <label class="form-label" for="period">Reporting year</label>
+    <select name="period" id="period" class="form-select">
+      {% for p in periods %}
+      <option value="{{ p.id }}" {% if selected.id == p.id %}selected{% endif %}>{{ p.year }} ({{ p.start_date.strftime("%d %b %Y") }} - {{ p.end_date.strftime("%d %b %Y") }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto"><button class="btn btn-outline-secondary">Change year</button></div>
+</form>
+
+<form method="post" id="gen-form"
+      onsubmit="var b=document.getElementById('gen-btn'); b.disabled=true; b.textContent='Generating... this can take 1-3 minutes. Please do not close this page.';">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="period" value="{{ selected.id }}">
+
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">1. Confirm the child</h2>
+    <div class="alert alert-secondary mb-2">
+      <strong>{{ child.full_name }}</strong> · Child ID {{ child.id }} · Current education: <strong>{{ child.current_education }}</strong>
+      {% if child.living_situation_note %}<div class="small">Living situation: {{ child.living_situation_note }}</div>{% endif %}
+    </div>
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" name="confirm_identity" id="confirm_identity" value="1" {% if values.confirm_identity %}checked{% endif %}>
+      <label class="form-check-label" for="confirm_identity">I confirm this is the right child and that the education shown is current.
+        (If not, <a href="{{ url_for('children.edit', child_id=child.id) }}">edit the profile</a> first.)</label>
+    </div>
+  </div></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">2. Information for {{ selected.year }}</h2>
+    <p class="text-muted small mb-2">Only the ticked observations are sent to the AI, together with the first name only (never the surname).</p>
+    {% if observations %}
+    {% for o in observations %}
+    <div class="form-check mb-1">
+      <input class="form-check-input" type="checkbox" name="obs_ids" value="{{ o.id }}" id="o{{ o.id }}"
+             {% if not values or o.id in values.obs_ids %}checked{% endif %}>
+      <label class="form-check-label" for="o{{ o.id }}">
+        <span class="text-muted small">{{ o.event_date.strftime("%d %b %Y") }} · {{ o.category.name }}</span><br>{{ o.text }}
+      </label>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="alert alert-warning">There are no saved observations for this child in {{ selected.year }}. You can paste bullet points below.</div>
+    {% endif %}
+    <div class="mt-3">
+      <label class="form-label" for="extra_bullets">Additional bullet points (optional, paste as many as you like)</label>
+      <textarea class="form-control" name="extra_bullets" id="extra_bullets" rows="6">{{ values.extra_bullets or "" }}</textarea>
+      <div class="form-text">These are used for this report only. To keep them permanently, add them as observations.</div>
+    </div>
+  </div></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">3. Previous report</h2>
+    {% if not history %}
+    <div class="alert alert-warning">No previous report is stored for this child.
+      <a href="{{ url_for('history.upload', child_id=child.id) }}">Upload one</a> if it exists. Without it, no comparisons with earlier years can be made.</div>
+    {% elif not default_prev %}
+    <div class="alert alert-warning">No report from before {{ selected.year }} was found for this child.</div>
+    {% endif %}
+    <select name="previous_report_id" class="form-select">
+      <option value="">No previous report</option>
+      {% for r in history %}
+      <option value="{{ r.id }}"
+        {% if values %}{% if values.previous_report_id == r.id|string %}selected{% endif %}
+        {% elif default_prev and default_prev.id == r.id %}selected{% endif %}>
+        {{ r.reporting_year }} · {{ r.original_filename }} ({{ r.file_type|upper }}){% if r.file_type != "docx" %} - no readable text{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <div class="form-check mt-2">
+      <input class="form-check-input" type="checkbox" name="confirm_no_previous" id="confirm_no_previous" value="1" {% if values.confirm_no_previous %}checked{% endif %}>
+      <label class="form-check-label" for="confirm_no_previous">There is no previous report for this child (only needed when "No previous report" is selected).</label>
+    </div>
+  </div></div>
+
+  <div class="card mb-3"><div class="card-body">
+    <h2 class="h5">4. When will sponsors receive this report?</h2>
+    <input class="form-control" name="receipt_context" maxlength="255" value="{{ values.receipt_context or '' }}"
+           placeholder="For example: January 2027, after Dashain and Tihar">
+    <div class="form-text">The report is written for the time it is received, so festivals that will already be over are not described as upcoming.</div>
+  </div></div>
+
+  {% if not template %}
+  <div class="alert alert-danger">No Report Writing Instructions are active yet.</div>
+  {% else %}
+  <p class="text-muted small">Instructions version {{ template.version_number }} will be used. Drafts are never approved automatically.</p>
+  {% endif %}
+  <button id="gen-btn" class="btn btn-success btn-lg">Generate Annual Report</button>
+  <a class="btn btn-link" href="{{ url_for('children.detail', child_id=child.id) }}">Cancel</a>
+</form>
+{% endblock %}

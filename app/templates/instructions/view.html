@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Instructions version {{ template.version_number }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Version {{ template.version_number }}
+    {% if template.is_active %}<span class="badge bg-success">Active</span>{% endif %}</h1>
+  <a class="btn btn-outline-secondary btn-sm mt-2 mt-md-0" href="{{ url_for('instructions.index') }}">Back</a>
+</div>
+{% if template.note %}<p class="text-muted">{{ template.note }}</p>{% endif %}
+<div class="card"><div class="card-body" style="white-space: pre-wrap;">{{ template.prompt_text }}</div></div>
+{% endblock %}

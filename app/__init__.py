@@ -29,15 +29,25 @@ def create_app(config_name=None):
     from .children.routes import bp as children_bp
     from .observations.routes import bp as observations_bp
     from .history.routes import bp as history_bp
+    from .reports.routes import bp as reports_bp
+    from .instructions.routes import bp as instructions_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(children_bp)
     app.register_blueprint(observations_bp)
     app.register_blueprint(history_bp)
+    app.register_blueprint(reports_bp)
+    app.register_blueprint(instructions_bp)
 
     from .cli import register_cli
     register_cli(app)
+
+    @app.context_processor
+    def ai_flags():
+        # AI_TEST_MODE=1 in .env shows a red reminder on every page: fictional data only.
+        flag = os.environ.get("AI_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on")
+        return {"ai_test_mode": flag}
 
     @app.after_request
     def security_headers(resp):

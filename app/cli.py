@@ -1,7 +1,8 @@
 from datetime import date
+from pathlib import Path
 import click
 from .extensions import db
-from .models import User, ROLE_ADMIN, Category, ReportingPeriod
+from .models import User, ROLE_ADMIN, Category, ReportingPeriod, ReportTemplate
 
 DEFAULT_CATEGORIES = [
     "Education and examinations",
@@ -51,5 +52,12 @@ def register_cli(app):
         if not has_period:
             db.session.add(ReportingPeriod(year=year, start_date=date(year, 1, 1), end_date=date(year, 12, 31)))
             click.echo(f"Added reporting period {year} (1 Jan - 31 Dec). Edit it in Admin > Periods if yours differs.")
+        if not db.session.execute(db.select(ReportTemplate)).first():
+            prompt_file = Path(__file__).resolve().parent / "prompts" / "report_prompt_v1.txt"
+            db.session.add(ReportTemplate(
+                version_number=1, is_active=True,
+                note="Original report-writing prompt supplied by the organization",
+                prompt_text=prompt_file.read_text(encoding="utf-8")))
+            click.echo("Saved report-writing instructions as version 1.")
         db.session.commit()
         click.echo(f"Added {added} new categories.")
