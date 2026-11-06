@@ -54,24 +54,160 @@
     <button id="ans-btn" class="btn btn-primary">Save answers and generate</button>
   </form>
 
-{% elif report.status == "draft_ready" and version %}
-  {% if check.issues %}
+{% elif report.status in ("draft_ready", "approved") and version %}
+  {% if report.status == "approved" and approval %}
+  <div class="alert alert-primary">
+    <strong>Approved:</strong> version {{ approval.version.version_no }} was approved by {{ approval.approved_by.name }}
+    on {{ approval.approved_at.strftime("%d %b %Y") }}{% if approval.accepted_warnings %} (with warnings accepted){% endif %}.
+    Nothing is sent to sponsors automatically.
+  </div>
+  {% endif %}
+
+  {% if issues %}
   <div class="alert alert-warning">
-    <strong>Please check before using this draft:</strong>
-    <ul class="mb-0">{% for i in check.issues %}<li>{{ i }}</li>{% endfor %}</ul>
+    <strong>Please check before approving this text:</strong>
+    <ul class="mb-0">{% for i in issues %}<li>{{ i }}</li>{% endfor %}</ul>
   </div>
   {% else %}
-  <div class="alert alert-success">Automatic checks found no problems. A person must still read the whole draft.</div>
+  <div class="alert alert-success">Automatic checks found no problems. A person must still read the whole report.</div>
   {% endif %}
-  <div class="mb-2">
-    <span class="badge bg-{{ 'success' if check.in_range else 'warning' }}">Body: {{ check.word_count }} words (target 480-500)</span>
-    <span class="text-muted small ms-2">The two identification lines are not counted.</span>
-  </div>
-  <div class="card mb-3"><div class="card-body" style="white-space: pre-wrap;">{{ version.body_text }}</div></div>
+
   {% if version.notes %}
   <div class="alert alert-info"><strong>Notes from the AI for the team (not part of the report):</strong><br>{{ version.notes }}</div>
   {% endif %}
-  <p class="text-muted small">This is draft {{ version.version_no }}, not an approved report. Editing, the Word export and approval come in the next phase.</p>
+
+  <h2 class="h5">Report text <span class="text-muted small">(version {{ version.version_no }} · {{ version_labels.get(version.kind, version.kind) }})</span></h2>
+  <div class="mb-2">
+    <span id="count-badge" class="badge bg-{{ 'success' if check.in_range else 'warning' }}">Body: {{ check.word_count }} words (target 480-500)</span>
+    <span class="text-muted small ms-2">The two identification lines are not counted.</span>
+  </div>
+
+  {% if report.status == "draft_ready" %}
+  <form method="post" action="{{ url_for('reports.save', report_id=report.id) }}" class="mb-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="base_version" value="{{ version.version_no }}">
+    <textarea id="report-text" name="text" class="form-control mb-2" rows="22">{{ editor_text }}</textarea>
+    <button class="btn btn-primary">Save as new version</button>
+    <span class="text-muted small ms-2">Every save makes a new version. The original AI draft is never overwritten.</span>
+  </form>
+
+  <form method="post" action="{{ url_for('reports.revise', report_id=report.id) }}" class="mb-4"
+        onsubmit="var b=document.getElementById('rev-btn'); b.disabled=true; b.textContent='Revising... please wait (1-3 minutes)';">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button id="rev-btn" class="btn btn-outline-primary">Ask the AI to fix the length</button>
+    <span class="text-muted small ms-2">It works on the last <em>saved</em> version, re-checks it against the original notes, and saves the result as a new version.</span>
+  </form>
+  {% else %}
+  <div class="card mb-3"><div class="card-body" style="white-space: pre-wrap;">{{ version.body_text }}</div></div>
+  {% endif %}
+
+  <h2 class="h5">Word file</h2>
+  <form method="post" action="{{ url_for('reports.export', report_id=report.id) }}" class="mb-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-success">Export Word file from version {{ version.version_no }}</button>
+  </form>
+  {% if exports %}
+  <div class="table-responsive">
+  <table class="table table-sm bg-white align-middle">
+    <thead><tr><th>File</th><th>From version</th><th>Page check</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+    {% for x in exports %}
+      <tr>
+        <td>{{ x.filename }}</td>
+        <td>{{ x.version.version_no }}</td>
+        <td>
+          {% if x.page_check == "ok" %}<span class="badge bg-success">1 page</span>
+          {% elif x.page_check == "estimated_ok" %}<span class="badge bg-secondary">estimate: 1 page</span>
+          {% elif x.page_check == "too_long" %}<span class="badge bg-danger">{{ x.page_count }} pages</span>
+          {% else %}<span class="badge bg-warning text-dark">may exceed 1 page</span>{% endif %}
+          <div class="small text-muted">{{ x.page_note }}</div>
+        </td>
+        <td>{{ x.created_at.strftime("%d %b %Y %H:%M") }} · {{ x.created_by.name }}</td>
+        <td><a href="{{ url_for('reports.download_export', export_id=x.id) }}">Download</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+
+  {% if current_user.is_admin %}
+  <h2 class="h5 mt-4">Approval</h2>
+  {% if report.status == "draft_ready" %}
+  <form method="post" action="{{ url_for('reports.approve', report_id=report.id) }}" class="card card-body mb-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="mb-2">Approving marks <strong>version {{ version.version_no }}</strong> as the final report. Nothing is sent to sponsors.</p>
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="checkbox" name="confirm_read" id="confirm_read" value="1">
+      <label class="form-check-label" for="confirm_read">I have read the whole report and checked the facts against the notes.</label>
+    </div>
+    {% if issues %}
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="checkbox" name="confirm_warnings" id="confirm_warnings" value="1">
+      <label class="form-check-label" for="confirm_warnings">I accept the warnings listed above.</label>
+    </div>
+    {% endif %}
+    <div><button class="btn btn-primary">Approve this version</button></div>
+  </form>
+  {% else %}
+  <form method="post" action="{{ url_for('reports.reopen', report_id=report.id) }}" class="mb-3"
+        onsubmit="return confirm('Re-open this report for changes? It will need a new approval.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-outline-danger">Re-open for changes</button>
+  </form>
+  {% endif %}
+  {% elif report.status == "draft_ready" %}
+  <p class="text-muted small mt-3">An administrator reviews and approves reports.</p>
+  {% endif %}
+
+  <h2 class="h5 mt-4">Versions</h2>
+  <div class="table-responsive">
+  <table class="table table-sm bg-white align-middle">
+    <thead><tr><th>#</th><th>Type</th><th>Saved</th><th></th></tr></thead>
+    <tbody>
+    {% for v in versions|reverse %}
+      <tr>
+        <td>{{ v.version_no }}</td>
+        <td>{{ version_labels.get(v.kind, v.kind) }}</td>
+        <td>{{ v.created_at.strftime("%d %b %Y %H:%M") }}{% if v.created_by %} · {{ v.created_by.name }}{% endif %}</td>
+        <td class="text-nowrap">
+          <a href="{{ url_for('reports.version_view', report_id=report.id, version_id=v.id) }}">View</a>
+          {% if report.status == "draft_ready" and v.id != version.id %}
+          <form method="post" action="{{ url_for('reports.restore', report_id=report.id, version_id=v.id) }}" class="d-inline"
+                onsubmit="return confirm('Copy this version as the newest version?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-link btn-sm p-0 ms-2">Use again</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if report.status == "draft_ready" %}
+  <script>
+    (function () {
+      var box = document.getElementById("report-text");
+      var badge = document.getElementById("count-badge");
+      if (!box || !badge) return;
+      function bodyWords(text) {
+        var lines = text.replace(/\r\n/g, "\n").split("\n"), found = 0, i = 0;
+        while (i < lines.length && found < 2) { if (lines[i].trim()) found++; i++; }
+        var body = lines.slice(i).join("\n").trim();
+        return body ? body.split(/\s+/).length : 0;
+      }
+      function update() {
+        var n = bodyWords(box.value), ok = n >= 480 && n <= 500;
+        badge.textContent = "Body: " + n + " words (target 480-500)";
+        badge.className = "badge bg-" + (ok ? "success" : "warning");
+      }
+      box.addEventListener("input", update);
+      update();
+    })();
+  </script>
+  {% endif %}
 {% endif %}
 
 {% if answered %}

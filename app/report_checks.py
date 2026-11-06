@@ -36,11 +36,14 @@ def count_words(body):
 def check_report(text, first_name=None):
     name_line, class_line, body = split_report(text)
     issues = []
+    format_ok = True
     if not name_line.startswith("Name: ") or len(name_line) <= len("Name: "):
+        format_ok = False
         issues.append('The first line must read "Name: " followed by the first name.')
     elif first_name and name_line[len("Name: "):].strip().lower() != first_name.strip().lower():
         issues.append(f'The name line does not match the selected child ("{first_name}").')
     if not class_line.startswith("Class/Education: ") or len(class_line) <= len("Class/Education: "):
+        format_ok = False
         issues.append('The second line must read "Class/Education: " followed by the class or education.')
     words = count_words(body)
     if words < WORD_MIN or words > WORD_MAX:
@@ -49,4 +52,5 @@ def check_report(text, first_name=None):
         if re.search(pattern, body, flags=re.IGNORECASE):
             issues.append(f'The text contains "{label}", which the instructions say to avoid.')
     return {"name_line": name_line, "class_line": class_line, "body": body,
-            "word_count": words, "in_range": WORD_MIN <= words <= WORD_MAX, "issues": issues}
+            "word_count": words, "in_range": WORD_MIN <= words <= WORD_MAX, "issues": issues,
+            "format_ok": format_ok}

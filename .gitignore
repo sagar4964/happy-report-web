@@ -3,4 +3,7 @@ __pycache__/
 .env
 instance/
 uploads/
+backups/
 *.pyc
+*.db
+*.zip

@@ -11,10 +11,17 @@ def create_app(config_name=None):
 
     if not app.config.get("SECRET_KEY"):
         raise RuntimeError("SECRET_KEY is not set. Add it to your .env file.")
+    if config_name == "production" and len(app.config["SECRET_KEY"]) < 32:
+        raise RuntimeError("SECRET_KEY is too short for production. Use a random value of at least 32 characters.")
     os.makedirs(app.instance_path, exist_ok=True)
     # Uploaded files live OUTSIDE any public folder, inside the instance folder.
     app.config.setdefault("UPLOAD_FOLDER", os.path.join(app.instance_path, "uploads"))
     app.config.setdefault("MAX_CONTENT_LENGTH", 10 * 1024 * 1024)  # 10 MB
+
+    if os.environ.get("TRUST_PROXY", "").strip() == "1":
+        # Only switch this on when the app really sits behind the hosting provider's proxy.
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -31,6 +38,7 @@ def create_app(config_name=None):
     from .history.routes import bp as history_bp
     from .reports.routes import bp as reports_bp
     from .instructions.routes import bp as instructions_bp
+    from .contributions.routes import bp as contributions_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(main_bp)
@@ -39,21 +47,19 @@ def create_app(config_name=None):
     app.register_blueprint(history_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(instructions_bp)
+    app.register_blueprint(contributions_bp)
 
     from .cli import register_cli
     register_cli(app)
 
-    @app.context_processor
-    def ai_flags():
-        # AI_TEST_MODE=1 in .env shows a red reminder on every page: fictional data only.
-        flag = os.environ.get("AI_TEST_MODE", "").strip().lower() in ("1", "true", "yes", "on")
-        return {"ai_test_mode": flag}
 
     @app.after_request
     def security_headers(resp):
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "same-origin"
+        if app.config.get("SESSION_COOKIE_SECURE"):  # production: tell browsers to always use HTTPS
+            resp.headers["Strict-Transport-Security"] = "max-age=31536000"
         return resp
 
     messages = {

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Contributions{% endblock %}
+{% block content %}
+<h1 class="h3 mb-1">Contributions</h1>
+<p class="text-muted mb-3">
+  {% if current_user.is_admin %}How much each person did in the app.{% else %}Your own work in the app. Only you and the administrators can see your numbers.{% endif %}
+</p>
+
+<ul class="nav nav-pills mb-3">
+  {% for v, name in [("week", "Week"), ("month", "Month"), ("year", "Year")] %}
+  <li class="nav-item">
+    <a class="nav-link {% if view == v %}active{% endif %}" href="{{ url_for('contributions.index', view=v, date=anchor.isoformat()) }}">{{ name }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<div class="d-flex align-items-center mb-3">
+  <a class="btn btn-outline-secondary btn-sm me-2" href="{{ url_for('contributions.index', view=view, date=previous_anchor.isoformat()) }}">&larr; Earlier</a>
+  <strong class="me-2">{{ label }}</strong>
+  {% if next_anchor %}
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('contributions.index', view=view, date=next_anchor.isoformat()) }}">Later &rarr;</a>
+  {% else %}
+  <span class="text-muted small">(current period)</span>
+  {% endif %}
+</div>
+
+{% if team_total == 0 %}
+<div class="alert alert-info">Nothing was recorded in this period.</div>
+{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm bg-white align-middle">
+  <thead>
+    <tr>
+      <th>Person</th>
+      {% for key, name in metrics %}<th class="text-end">{{ name }}</th>{% endfor %}
+      <th class="text-end">Total</th>
+      <th style="min-width: 160px;">Share of the team's work</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{{ r.user.name }}{% if not r.user.is_active %} <span class="badge bg-secondary">inactive</span>{% endif %}</td>
+      {% for key, name in metrics %}<td class="text-end">{{ r.counts[key] }}</td>{% endfor %}
+      <td class="text-end"><strong>{{ r.total }}</strong></td>
+      <td>
+        <div class="progress" style="height: 1.3rem;" title="{{ r.percent }}%">
+          <div class="progress-bar" role="progressbar" style="width: {{ r.percent }}%;">{{ r.percent }}%</div>
+        </div>
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="{{ metrics|length + 3 }}" class="text-muted">No entries for you in this period.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<details class="small text-muted">
+  <summary>What is counted?</summary>
+  <ul class="mt-2">
+    <li>Every action counts once, so the percentage is each person's share of all actions in the period.
+        An action is not weighed by how long it took or how important it was, so use the numbers as a guide, not a verdict.</li>
+    <li>Notes added and edited (a note counts for the person who last edited it), old reports uploaded,
+        reports started, clarification questions answered, edits to a report text, Word files exported and approvals.</li>
+    <li>Notes and reports that were removed are not counted. Weeks run Sunday to Saturday, in Nepal time.</li>
+  </ul>
+</details>
+{% endblock %}

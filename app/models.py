@@ -12,6 +12,7 @@ STATUS_GENERATING = "generating"
 STATUS_NEEDS_ANSWERS = "needs_answers"
 STATUS_DRAFT_READY = "draft_ready"
 STATUS_FAILED = "failed"
+STATUS_APPROVED = "approved"
 
 
 def utcnow():
@@ -201,6 +202,8 @@ class ReportVersion(db.Model):
     created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
 
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+
     __table_args__ = (db.UniqueConstraint("generated_report_id", "version_no"),)
 
 
@@ -217,6 +220,42 @@ class Clarification(db.Model):
     answered_by_id = db.Column(db.Integer, db.ForeignKey("users.id"))
     answered_at = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class ReportExport(db.Model):
+    """A Word file built from one report version, stored privately on the server."""
+    __tablename__ = "report_exports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    generated_report_id = db.Column(db.Integer, db.ForeignKey("generated_reports.id"),
+                                    nullable=False, index=True)
+    version_id = db.Column(db.Integer, db.ForeignKey("report_versions.id"), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)       # e.g. Asha_Report.docx
+    stored_name = db.Column(db.String(64), unique=True, nullable=False)  # server-made name
+    page_count = db.Column(db.Integer)
+    page_check = db.Column(db.String(20), nullable=False)      # ok / too_long / estimated_ok / estimated_long
+    page_note = db.Column(db.String(255))
+    created_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    created_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+
+    version = db.relationship("ReportVersion")
+    created_by = db.relationship("User", foreign_keys=[created_by_id])
+
+
+class ReportApproval(db.Model):
+    """Who approved exactly which version, and when. History is kept if a report is reopened."""
+    __tablename__ = "report_approvals"
+
+    id = db.Column(db.Integer, primary_key=True)
+    generated_report_id = db.Column(db.Integer, db.ForeignKey("generated_reports.id"),
+                                    nullable=False, index=True)
+    version_id = db.Column(db.Integer, db.ForeignKey("report_versions.id"), nullable=False)
+    approved_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    approved_at = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    accepted_warnings = db.Column(db.Boolean, nullable=False, default=False)
+
+    version = db.relationship("ReportVersion")
+    approved_by = db.relationship("User", foreign_keys=[approved_by_id])
 
 
 @login_manager.user_loader

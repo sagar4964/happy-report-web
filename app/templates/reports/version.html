@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Version {{ version.version_no }}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start mb-3">
+  <div>
+    <h1 class="h3 mb-1">Version {{ version.version_no }} · {{ labels.get(version.kind, version.kind) }}</h1>
+    <div class="text-muted">
+      <a href="{{ url_for('reports.detail', report_id=report.id) }}">Report {{ report.reporting_year }}</a>
+      · {{ child.full_name }} · saved {{ version.created_at.strftime("%d %b %Y %H:%M") }}
+      {% if version.created_by %}· {{ version.created_by.name }}{% endif %}
+    </div>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm mt-2 mt-md-0" href="{{ url_for('reports.detail', report_id=report.id) }}">Back to the report</a>
+</div>
+<div class="mb-2"><span class="badge bg-{{ 'success' if check.in_range else 'warning' }}">Body: {{ check.word_count }} words</span></div>
+<div class="card"><div class="card-body" style="white-space: pre-wrap;">{{ version.body_text }}</div></div>
+<p class="text-muted small mt-2">Old versions are read-only. To use this text again, restore it from the report page; that makes a new version.</p>
+{% endblock %}

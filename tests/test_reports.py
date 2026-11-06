@@ -198,6 +198,7 @@ def test_unexpected_crash_in_provider_is_a_clean_failure(client, world, use_ai):
 
 
 def test_missing_ai_settings_are_explained(client, world, monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "openai")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_MODEL", raising=False)
     login(client, "s@example.org")

@@ -75,3 +75,25 @@ def stored_path(name):
     if not STORED_NAME_RE.match(name or ""):
         raise ValueError("Invalid stored file name")
     return os.path.join(_folder(), name)
+
+
+GENERATED_NAME_RE = re.compile(r"^[0-9a-f]{32}\.docx$")
+
+
+def _generated_folder():
+    return os.path.join(current_app.config["UPLOAD_FOLDER"], "generated")
+
+
+def save_generated(data):
+    """Store a generated Word file under a random server-made name (separate from uploads)."""
+    os.makedirs(_generated_folder(), exist_ok=True)
+    name = f"{uuid.uuid4().hex}.docx"
+    with open(os.path.join(_generated_folder(), name), "xb") as f:
+        f.write(data)
+    return name
+
+
+def generated_path(name):
+    if not GENERATED_NAME_RE.match(name or ""):
+        raise ValueError("Invalid stored file name")
+    return os.path.join(_generated_folder(), name)

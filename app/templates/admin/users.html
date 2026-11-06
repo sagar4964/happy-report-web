@@ -1,22 +1,63 @@
 {% extends "base.html" %}
 {% block title %}Users{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Users</h1>
-  <a class="btn btn-primary" href="{{ url_for('admin.user_new') }}">Add user</a>
+  <a class="btn btn-primary mt-2 mt-md-0" href="{{ url_for('admin.user_new') }}">Add user</a>
 </div>
+<p class="text-muted small mb-2">
+  <strong>Deactivate</strong> stops a person from logging in; you can reactivate them later.
+  <strong>Remove</strong> is permanent: if the person worked in the app, their name becomes "Removed user"
+  (their notes and reports stay); if the account was never used, it is deleted completely.
+</p>
 <div class="table-responsive">
-<table class="table table-sm bg-white">
-  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead>
+<table class="table table-sm bg-white align-middle">
+  <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th></th></tr></thead>
   <tbody>
   {% for u in users %}
     <tr>
-      <td>{{ u.name }}</td><td>{{ u.email }}</td><td>{{ u.role }}</td>
-      <td>{{ "Active" if u.is_active else "Inactive" }}</td>
-      <td><a href="{{ url_for('admin.user_edit', user_id=u.id) }}">Edit</a></td>
+      <td>{{ u.name }}{% if u.id == current_user.id %} <span class="badge bg-info text-dark">You</span>{% endif %}</td>
+      <td>{{ u.email }}</td>
+      <td>{{ u.role }}</td>
+      <td>
+        {% if is_removed(u) %}<span class="badge bg-dark">Removed</span>
+        {% elif u.is_active %}<span class="badge bg-success">Active</span>
+        {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+      </td>
+      <td>{{ u.last_login_at.strftime("%d %b %Y") if u.last_login_at else "never" }}</td>
+      <td class="text-nowrap">
+        {% if not is_removed(u) %}
+        <a href="{{ url_for('admin.user_edit', user_id=u.id) }}">Edit</a>
+        {% if u.id != current_user.id %}
+          {% if u.is_active %}
+          <form method="post" action="{{ url_for('admin.user_deactivate', user_id=u.id) }}" class="d-inline"
+                onsubmit="return confirm('Deactivate this person? They will not be able to log in.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-link btn-sm p-0 ms-2">Deactivate</button>
+          </form>
+          {% else %}
+          <form method="post" action="{{ url_for('admin.user_reactivate', user_id=u.id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-link btn-sm p-0 ms-2">Reactivate</button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('admin.user_remove', user_id=u.id) }}" class="d-inline"
+                onsubmit="return confirm('Remove this person permanently? This cannot be undone.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-link btn-sm text-danger p-0 ms-2">Remove</button>
+          </form>
+        {% endif %}
+        {% endif %}
+      </td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
 </div>
+{% if removed_count %}
+<p class="small">
+  {% if show_removed %}<a href="{{ url_for('admin.users') }}">Hide removed accounts</a>
+  {% else %}<a href="{{ url_for('admin.users', show_removed=1) }}">Show {{ removed_count }} removed account(s)</a>{% endif %}
+</p>
+{% endif %}
 {% endblock %}

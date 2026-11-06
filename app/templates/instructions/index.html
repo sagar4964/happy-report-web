@@ -4,13 +4,15 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Report Writing Instructions</h1>
   {% if current_user.is_admin %}
-  <a class="btn btn-primary mt-2 mt-md-0" href="{{ url_for('instructions.new') }}">Create a new version</a>
+  <a class="btn btn-primary mt-2 mt-md-0" href="{{ url_for('instructions.new') }}">Edit instructions</a>
   {% endif %}
 </div>
 {% if not versions %}
 <div class="alert alert-warning">No instructions are saved yet. Run <code>flask --app run seed-defaults</code>.</div>
 {% else %}
-<p class="text-muted">The active version is sent to the AI with every report. Older versions are never changed or deleted.</p>
+<p class="text-muted">The active version is sent to the AI with every report.
+  {% if current_user.is_admin %}<strong>Edit instructions</strong> saves your changes as a NEW version and makes it active.{% else %}Only an administrator can edit the instructions.{% endif %}
+  Older versions are never changed or deleted.</p>
 <div class="table-responsive">
 <table class="table table-sm bg-white align-middle">
   <thead><tr><th>Version</th><th>Status</th><th>Note</th><th>Created</th><th></th></tr></thead>
@@ -36,5 +38,9 @@
   </tbody>
 </table>
 </div>
+{% if active %}
+<h2 class="h5 mt-4">Active text (version {{ active.version_number }})</h2>
+<div class="card"><div class="card-body" style="white-space: pre-wrap;">{{ active.prompt_text }}</div></div>
+{% endif %}
 {% endif %}
 {% endblock %}

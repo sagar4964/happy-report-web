@@ -1,9 +1,10 @@
-from flask import Blueprint, render_template, redirect, url_for, flash
+from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import current_user
 from ..extensions import db
 from ..models import User, Category, ReportingPeriod
 from ..audit import log_event
 from ..decorators import admin_required
+from ..user_admin import is_removed, remove_user
 from .forms import UserCreateForm, UserEditForm, CategoryForm, PeriodForm
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -13,8 +14,12 @@ bp = Blueprint("admin", __name__, url_prefix="/admin")
 @bp.route("/users")
 @admin_required
 def users():
-    all_users = db.session.execute(db.select(User).order_by(User.name)).scalars().all()
-    return render_template("admin/users.html", users=all_users)
+    everyone = db.session.execute(db.select(User).order_by(User.name)).scalars().all()
+    show_removed = request.args.get("show_removed") == "1"
+    removed_count = sum(1 for u in everyone if is_removed(u))
+    shown = [u for u in everyone if show_removed or not is_removed(u)]
+    return render_template("admin/users.html", users=shown, show_removed=show_removed,
+                           removed_count=removed_count, is_removed=is_removed)
 
 
 @bp.route("/users/new", methods=["GET", "POST"])
@@ -39,6 +44,9 @@ def user_new():
 @admin_required
 def user_edit(user_id):
     user = db.get_or_404(User, user_id)
+    if is_removed(user):
+        flash("This account was removed and cannot be edited.", "info")
+        return redirect(url_for("admin.users"))
     form = UserEditForm(obj=user)
     if form.validate_on_submit():
         own = user.id == current_user.id
@@ -56,6 +64,66 @@ def user_edit(user_id):
             flash("User updated.", "success")
             return redirect(url_for("admin.users"))
     return render_template("admin/user_form.html", form=form, title="Edit user")
+
+
+def _other_user(user_id, verb):
+    """The user to act on, or None (with a message) when the admin targets their own account."""
+    user = db.get_or_404(User, user_id)
+    if user.id == current_user.id:
+        flash(f"You cannot {verb} your own account.", "danger")
+        return None
+    return user
+
+
+@bp.route("/users/<int:user_id>/deactivate", methods=["POST"])
+@admin_required
+def user_deactivate(user_id):
+    user = _other_user(user_id, "deactivate")
+    if user is not None:
+        if is_removed(user):
+            flash("This account was already removed.", "info")
+        else:
+            user.is_active = False
+            log_event("user_deactivated", "user", user.id)
+            db.session.commit()
+            flash(f"{user.name} was deactivated and can no longer log in. "
+                  "You can reactivate the account at any time.", "success")
+    return redirect(url_for("admin.users"))
+
+
+@bp.route("/users/<int:user_id>/reactivate", methods=["POST"])
+@admin_required
+def user_reactivate(user_id):
+    user = _other_user(user_id, "change")
+    if user is not None:
+        if is_removed(user):
+            flash("A removed account cannot be reactivated. Create a new account instead.", "danger")
+        else:
+            user.is_active = True
+            log_event("user_reactivated", "user", user.id)
+            db.session.commit()
+            flash(f"{user.name} can log in again.", "success")
+    return redirect(url_for("admin.users"))
+
+
+@bp.route("/users/<int:user_id>/remove", methods=["POST"])
+@admin_required
+def user_remove(user_id):
+    user = _other_user(user_id, "remove")
+    if user is not None:
+        if is_removed(user):
+            flash("This account was already removed.", "info")
+        else:
+            name = user.name
+            outcome = remove_user(user)
+            log_event("user_removed", "user", user_id, detail=outcome)
+            db.session.commit()
+            if outcome == "deleted":
+                flash(f"{name} was deleted. This account had no work attached to it.", "success")
+            else:
+                flash(f"{name} was removed. Their login is disabled and their name is replaced by "
+                      "'Removed user', so notes and reports they wrote stay intact.", "success")
+    return redirect(url_for("admin.users"))
 
 
 # ---------- Categories ----------

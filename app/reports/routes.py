@@ -1,14 +1,21 @@
 import json
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+import os
+from flask import Blueprint, render_template, redirect, url_for, flash, request, abort, send_file
 from flask_login import login_required, current_user
+from sqlalchemy.exc import IntegrityError
 from ..extensions import db, limiter
 from ..models import (Child, Observation, HistoricalReport, GeneratedReport, ReportVersion,
-                      Clarification, ReportTemplate, utcnow,
-                      STATUS_GENERATING, STATUS_NEEDS_ANSWERS, STATUS_DRAFT_READY, STATUS_FAILED)
+                      Clarification, ReportTemplate, ReportExport, ReportApproval, utcnow,
+                      STATUS_GENERATING, STATUS_NEEDS_ANSWERS, STATUS_DRAFT_READY, STATUS_FAILED,
+                      STATUS_APPROVED)
 from ..audit import log_event
+from ..decorators import admin_required
 from ..services import get_periods, resolve_period, latest_previous_report
-from ..report_checks import check_report
-from ..report_service import run_generation, is_busy, mark_generating
+from ..report_checks import check_report, split_report
+from ..report_service import run_generation, run_revision, is_busy, mark_generating, latest_version
+from ..docx_export import build_docx, report_filename
+from ..pagecheck import check_pages
+from ..files import save_generated, generated_path
 
 bp = Blueprint("reports", __name__)
 
@@ -17,7 +24,11 @@ STATUS_LABELS = {
     STATUS_NEEDS_ANSWERS: ("Questions to answer", "warning"),
     STATUS_DRAFT_READY: ("Draft ready", "success"),
     STATUS_FAILED: ("Failed - can retry", "danger"),
+    STATUS_APPROVED: ("Approved", "primary"),
 }
+
+VERSION_LABELS = {"ai_draft": "AI draft", "edited": "Edited by staff", "ai_revision": "AI length revision"}
+MAX_TEXT = 20000
 
 
 def _active_template():
@@ -165,20 +176,60 @@ def detail(report_id):
     return _render_detail(db.get_or_404(GeneratedReport, report_id))
 
 
-def _render_detail(report, answer_values=None, errors=None):
-    clars = _clarifications(report)
-    version = db.session.execute(
+def _all_versions(report):
+    return db.session.execute(
         db.select(ReportVersion).where(ReportVersion.generated_report_id == report.id)
-        .order_by(ReportVersion.version_no.desc())
+        .order_by(ReportVersion.version_no)
+    ).scalars().all()
+
+
+def _exports(report):
+    return db.session.execute(
+        db.select(ReportExport).where(ReportExport.generated_report_id == report.id)
+        .order_by(ReportExport.created_at.desc(), ReportExport.id.desc())
+    ).scalars().all()
+
+
+def _issues(report, version):
+    """Everything a person should look at before approving this exact text."""
+    check = check_report(version.body_text, report.child.first_name)
+    issues = list(check["issues"])
+    export = db.session.execute(
+        db.select(ReportExport).where(ReportExport.generated_report_id == report.id,
+                                      ReportExport.version_id == version.id)
+        .order_by(ReportExport.created_at.desc(), ReportExport.id.desc())
     ).scalars().first()
-    check = check_report(version.body_text, report.child.first_name) if version else None
+    if export is None:
+        issues.append("This exact text has not been exported and page-checked yet. "
+                      "Press 'Export Word file' first.")
+    elif export.page_check in ("too_long", "estimated_long"):
+        issues.append(export.page_note or "The Word file may not fit on one page.")
+    return check, issues, export
+
+
+def _render_detail(report, answer_values=None, errors=None, editor_text=None):
+    clars = _clarifications(report)
+    versions = _all_versions(report)
+    version = versions[-1] if versions else None
+    check = issues = export = None
+    approval = None
+    if version and report.status in (STATUS_DRAFT_READY, STATUS_APPROVED):
+        check, issues, export = _issues(report, version)
+    if report.status == STATUS_APPROVED:
+        approval = db.session.execute(
+            db.select(ReportApproval).where(ReportApproval.generated_report_id == report.id)
+            .order_by(ReportApproval.approved_at.desc(), ReportApproval.id.desc())
+        ).scalars().first()
     label, colour = STATUS_LABELS.get(report.status, (report.status, "secondary"))
     return render_template(
         "reports/detail.html", report=report, child=report.child, clars=clars,
         unanswered=[c for c in clars if c.answer is None], answered=[c for c in clars if c.answer],
-        version=version, check=check, status_label=label, status_colour=colour,
+        version=version, versions=versions, version_labels=VERSION_LABELS, check=check,
+        issues=issues, export=export, exports=_exports(report), approval=approval,
+        status_label=label, status_colour=colour,
         busy=is_busy(report), obs_count=len(json.loads(report.included_observation_ids or "[]")),
-        answer_values=answer_values or {}, errors=errors or [])
+        answer_values=answer_values or {}, errors=errors or [],
+        editor_text=editor_text if editor_text is not None else (version.body_text if version else ""))
 
 
 @bp.route("/reports/<int:report_id>/answers", methods=["POST"])
@@ -227,4 +278,183 @@ def retry(report_id):
     log_event("report_retry", "generated_report", report.id)
     mark_generating(report)
     run_generation(report, current_user.id)
+    return redirect(url_for("reports.detail", report_id=report.id))
+
+
+# ---------------- review, edit, revise, export, approve ----------------
+def _draft_or_redirect(report):
+    """Editing actions are only allowed on a draft that is not being generated."""
+    if report.status != STATUS_DRAFT_READY or is_busy(report):
+        flash("This report cannot be changed right now (it is approved or still being generated).", "warning")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    return None
+
+
+@bp.route("/reports/<int:report_id>/save", methods=["POST"])
+@login_required
+def save(report_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    blocked = _draft_or_redirect(report)
+    if blocked:
+        return blocked
+    text = (request.form.get("text") or "").replace("\r\n", "\n").strip()
+    latest = latest_version(report.id)
+    if not text:
+        return _render_detail(report, errors=["The report text cannot be empty."], editor_text=text)
+    if len(text) > MAX_TEXT:
+        return _render_detail(report, errors=[f"The text is too long (limit {MAX_TEXT:,} characters)."],
+                              editor_text=text)
+    if request.form.get("base_version") != str(latest.version_no):
+        return _render_detail(report, editor_text=text, errors=[
+            "Someone saved a newer version while you were editing. Your text is still in the box below. "
+            "Copy it, check the newest version, and save again."])
+    if text == latest.body_text.strip():
+        flash("No changes to save.", "info")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    db.session.add(ReportVersion(generated_report_id=report.id, version_no=latest.version_no + 1,
+                                 kind="edited", body_text=text, created_by_id=current_user.id))
+    try:
+        log_event("report_edited", "generated_report", report.id)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return _render_detail(report, editor_text=text, errors=[
+            "Someone saved at the same moment. Your text is still in the box below. Please save again."])
+    flash(f"Saved as version {latest.version_no + 1}. The original AI draft is kept.", "success")
+    return redirect(url_for("reports.detail", report_id=report.id))
+
+
+@bp.route("/reports/<int:report_id>/revise", methods=["POST"])
+@login_required
+@limiter.limit("20 per hour")
+def revise(report_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    blocked = _draft_or_redirect(report)
+    if blocked:
+        return blocked
+    mark_generating(report)
+    ok, message = run_revision(report, current_user.id)
+    flash(message, "success" if ok else "danger")
+    return redirect(url_for("reports.detail", report_id=report.id))
+
+
+@bp.route("/reports/<int:report_id>/versions/<int:version_id>")
+@login_required
+def version_view(report_id, version_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    version = db.get_or_404(ReportVersion, version_id)
+    if version.generated_report_id != report.id:
+        abort(404)
+    check = check_report(version.body_text, report.child.first_name)
+    return render_template("reports/version.html", report=report, child=report.child,
+                           version=version, check=check, labels=VERSION_LABELS)
+
+
+@bp.route("/reports/<int:report_id>/restore/<int:version_id>", methods=["POST"])
+@login_required
+def restore(report_id, version_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    blocked = _draft_or_redirect(report)
+    if blocked:
+        return blocked
+    old = db.get_or_404(ReportVersion, version_id)
+    if old.generated_report_id != report.id:
+        abort(404)
+    latest = latest_version(report.id)
+    db.session.add(ReportVersion(generated_report_id=report.id, version_no=latest.version_no + 1,
+                                 kind="edited", body_text=old.body_text, created_by_id=current_user.id))
+    try:
+        log_event("report_version_restored", "generated_report", report.id)
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash("Someone saved at the same moment. Please try again.", "warning")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    flash(f"Version {old.version_no} was copied as the new version {latest.version_no + 1}.", "success")
+    return redirect(url_for("reports.detail", report_id=report.id))
+
+
+@bp.route("/reports/<int:report_id>/export", methods=["POST"])
+@login_required
+def export(report_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    if report.status not in (STATUS_DRAFT_READY, STATUS_APPROVED) or is_busy(report):
+        flash("There is no finished text to export yet.", "warning")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    version = latest_version(report.id)
+    check = check_report(version.body_text, report.child.first_name)
+    if not check["format_ok"]:
+        flash("Fix the two identification lines first: they must read 'Name: ...' and "
+              "'Class/Education: ...'.", "danger")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    name_line, class_line, body = split_report(version.body_text)
+    data = build_docx(name_line, class_line, body)
+    pages = check_pages(data, name_line, class_line, body)
+    all_children = db.session.execute(db.select(Child)).scalars().all()
+    exp = ReportExport(
+        generated_report_id=report.id, version_id=version.id,
+        filename=report_filename(report.child, all_children),
+        stored_name=save_generated(data), page_count=pages["count"],
+        page_check=pages["status"], page_note=pages["note"], created_by_id=current_user.id)
+    db.session.add(exp)
+    db.session.flush()
+    log_event("report_exported", "generated_report", report.id)
+    db.session.commit()
+    if pages["status"] in ("too_long", "estimated_long"):
+        flash("Word file created, but it may not fit on one page. Please review.", "warning")
+    else:
+        flash("Word file created.", "success")
+    return redirect(url_for("reports.detail", report_id=report.id))
+
+
+@bp.route("/exports/<int:export_id>/download")
+@login_required
+def download_export(export_id):
+    exp = db.get_or_404(ReportExport, export_id)
+    path = generated_path(exp.stored_name)
+    if not os.path.exists(path):
+        abort(404)
+    log_event("report_downloaded", "generated_report", exp.generated_report_id)
+    db.session.commit()
+    resp = send_file(path, as_attachment=True, download_name=exp.filename,
+                     mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+    resp.headers["Cache-Control"] = "private, no-store"
+    return resp
+
+
+@bp.route("/reports/<int:report_id>/approve", methods=["POST"])
+@admin_required
+def approve(report_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    blocked = _draft_or_redirect(report)
+    if blocked:
+        return blocked
+    version = latest_version(report.id)
+    check, issues, _export = _issues(report, version)
+    if not request.form.get("confirm_read"):
+        flash("Please confirm that you have read the whole report before approving it.", "danger")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    if issues and not request.form.get("confirm_warnings"):
+        flash("There are warnings. Tick the box to accept them, or fix them first.", "danger")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    db.session.add(ReportApproval(generated_report_id=report.id, version_id=version.id,
+                                  approved_by_id=current_user.id, accepted_warnings=bool(issues)))
+    report.status = STATUS_APPROVED
+    log_event("report_approved", "generated_report", report.id)
+    db.session.commit()
+    flash(f"Version {version.version_no} is approved. Nothing is sent to sponsors automatically.", "success")
+    return redirect(url_for("reports.detail", report_id=report.id))
+
+
+@bp.route("/reports/<int:report_id>/reopen", methods=["POST"])
+@admin_required
+def reopen(report_id):
+    report = db.get_or_404(GeneratedReport, report_id)
+    if report.status != STATUS_APPROVED:
+        flash("This report is not approved.", "info")
+        return redirect(url_for("reports.detail", report_id=report.id))
+    report.status = STATUS_DRAFT_READY
+    log_event("report_reopened", "generated_report", report.id)
+    db.session.commit()
+    flash("The report is open for changes again. It needs a new approval.", "info")
     return redirect(url_for("reports.detail", report_id=report.id))
